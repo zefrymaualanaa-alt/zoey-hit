@@ -313,9 +313,9 @@ async function processNextHit() {
                 `<b>Package Status   :</b> <code>Secured & Verified Live</code>\n` +
                 `</blockquote>\n\n` +
                 `<b>English 🇬🇧 :</b>\n` +
-                `<i>Successfully hit cookies, if you want to tidy up the cookie format and check live/dead cookies, please forward this file to the bot @netflixcookieess_bot so that it can be automatically sorted.</i>\n\n` +
+                `<i>Successfully hit cookies, if you want to tidy up the cookie format and check live/dead cookies, please forward this file to the bot @corvastcookie_bot so that it can be automatically sorted.</i>\n\n` +
                 `<b>Indonesian 🇮🇩 :</b>\n` +
-                `<i>Berhasil hit cookies, jika ingin merapihkan format cookies dan cek cookies live/dead silahkan forward file ini ke bot @netflixcookieess_bot agar otomatis di sortir</i>`;
+                `<i>Berhasil hit cookies, jika ingin merapihkan format cookies dan cek cookies live/dead silahkan forward file ini ke bot @corvastcookie_bot agar otomatis di sortir</i>`;
             
             await ctx.reply(summaryLayout, { parse_mode: 'HTML' });
 
