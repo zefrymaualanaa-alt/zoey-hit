@@ -214,7 +214,7 @@ function generateWelcomeText(ctx) {
     }
 
     return `<b>[ CORVAST  NETFLIX HIT ]</b>\n\n` +
-        `Selamat datang, <b>${ctx.from.first_name ||'}</b>.\n\n` +
+        `Selamat datang, <b>${ctx.from.first_name || 'User'}</b>.\n\n` +
         `Bot ini dirancang untuk mendapatkan sesi cookies Netflix live secara massal. Pastikan sebelum menjalankan bot ini kamu sudah memiliki akses membership ke bot.\n\n` +
 
         `📊 <b>STATUS BOT:</b>\n\n` +
