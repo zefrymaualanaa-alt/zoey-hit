@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Telegraf } = require('telegraf'); // Hapus Markup karena kita pakai raw object
+const { Telegraf } = require('telegraf'); 
 const axios = require('axios');
 const fs = require('fs');
 const { chromium } = require('playwright');
@@ -11,6 +11,7 @@ let isProcessingHit = false;
 let currentTaskDetail = null;
 let globalAccountIndex = 0;
 const userStates = {}; 
+const renameCache = {}; // Cache untuk fitur rebranding
 
 // --- DATABASE & SETTING OWNER ---
 const USER_DB_FILE = 'users.json'; 
@@ -101,7 +102,7 @@ async function getLinkFromCodeboxGen(page) {
     try {
         await page.waitForSelector('.codebox', { timeout: 30000, state: 'visible' });
         const link = await page.$eval('.codebox code', el => el.textContent.trim());
-        if (link && link.includes('https://netflix.com/?nftoken=')) return link;
+        if (link && link.startsWith('http')) return link;
         return null;
     } catch (error) { return null; }
 }
@@ -213,7 +214,7 @@ function generateWelcomeText(ctx) {
         avgSpeed = (systemStats.totalTimeSeconds / systemStats.totalCookiesForSpeed).toFixed(2);
     }
 
-    return `<b>[ CORVAST  NETFLIX HIT ]</b>\n\n` +
+    return `<b>[ peritopia NETFLIX HIT ]</b>\n\n` +
         `Selamat datang, <b>${ctx.from.first_name || 'User'}</b>.\n\n` +
         `Bot ini dirancang untuk mendapatkan sesi cookies Netflix live secara massal. Pastikan sebelum menjalankan bot ini kamu sudah memiliki akses membership ke bot.\n\n` +
 
@@ -291,6 +292,12 @@ bot.command('hit', async (ctx) => {
     handleHitQueue(ctx, currentUserId, targetTotal);
 });
 
+bot.command('rename', async (ctx) => {
+    if (ctx.from.id.toString() !== OWNER_ID.toString()) return ctx.reply("❌ Akses Ditolak!");
+    userStates[ctx.from.id.toString()] = 'AWAITING_RENAME_FILE';
+    ctx.reply("📁 <b>MODE REBRANDING AKTIF</b>\n\nSilakan kirimkan file <code>index.js</code> (Script Bot) yang ingin Anda ubah datanya.", { parse_mode: 'HTML' });
+});
+
 // --- TOMBOL ACTION HANDLER ---
 bot.action('action_cek_antrian', (ctx) => {
     ctx.answerCbQuery();
@@ -313,14 +320,15 @@ bot.action('action_run_bot', async (ctx) => {
 bot.action('action_menu_bot', (ctx) => {
     ctx.answerCbQuery();
     const menuText = `<b>[ PUSAT KENDALI SISTEM ]</b>\n━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `Berikut adalah modul perintah utama yang tersedia di sistem Corvast:\n\n` +
+        `Berikut adalah modul perintah utama yang tersedia di sistem peritopia:\n\n` +
         `<b>🚀 Modul Eksekusi</b>\n` +
         `• <code>/hit [jumlah]</code> : Eksekusi manual mesin ekstraksi (Maks 100).\n` +
         `• <code>/cekantrian</code> : Pantau status lalu lintas server secara <i>real-time</i>.\n\n` +
         `<b>👑 Modul Administrator</b>\n` +
         `• <code>/addvip @username [durasi]</code> : Mendaftarkan kredensial VIP baru.\n` +
         `• <code>/delvip @username</code> : Mencabut otorisasi VIP pengguna.\n` +
-        `• <code>/bc [pesan]</code> : Menyiarkan pemberitahuan global ke <i>database</i> pengguna.\n\n` +
+        `• <code>/bc [pesan]</code> : Menyiarkan pemberitahuan global ke <i>database</i> pengguna.\n` +
+        `• <code>/rename</code> : Memulai proses auto-rebranding file script.\n\n` +
         `<i>Anda juga dapat mengoperasikan sistem dengan mudah menggunakan panel tombol di bawah ini.</i>`;
 
     ctx.editMessageText(menuText, {
@@ -359,10 +367,38 @@ bot.action('action_back_home', (ctx) => {
     }).catch(() => {});
 });
 
+// --- DOCUMENT HANDLER UNTUK REBRANDING ---
+bot.on('document', async (ctx, next) => {
+    const currentUserId = ctx.from.id.toString();
+    
+    if (userStates[currentUserId] === 'AWAITING_RENAME_FILE') {
+        const doc = ctx.message.document;
+        if (!doc.file_name.endsWith('.js')) {
+            return ctx.reply("⚠️ Harap kirimkan file berekstensi .js!");
+        }
+        
+        try {
+            const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+            const response = await axios.get(fileLink.href, { responseType: 'text' });
+            
+            renameCache[currentUserId] = response.data;
+            userStates[currentUserId] = 'AWAITING_RENAME_DATA';
+            
+            const petunjuk = `✅ <b>File berhasil diunggah!</b>\n\nSekarang kirimkan format data pengganti dengan pemisah garis vertikal <code>|</code>\n\n<b>Format:</b>\n<code>[Owner ID] | [Nama Branding] | [@Username_Bot_Admin]</code>\n\n<b>Contoh:</b>\n<code>987654321 | BINTANG | @bintang_bot</code>`;
+            
+            return ctx.reply(petunjuk, { parse_mode: 'HTML' });
+        } catch (error) {
+            return ctx.reply("❌ Gagal mengunduh dan membaca file.");
+        }
+    }
+    return next();
+});
+
 // --- TEXT INPUT HANDLER ---
 bot.on('text', async (ctx, next) => {
     const currentUserId = ctx.from.id.toString();
     
+    // Handler Input Hit
     if (userStates[currentUserId] === 'AWAITING_HIT_COUNT') {
         const inputStr = ctx.message.text.trim();
         const targetCount = parseInt(inputStr);
@@ -376,6 +412,40 @@ bot.on('text', async (ctx, next) => {
         
         await ctx.reply(`✅ <b>Otorisasi Target: ${targetTotal} Data</b>\nSistem sedang menyiapkan resource komputasi...`, { parse_mode: 'HTML' });
         handleHitQueue(ctx, currentUserId, targetTotal);
+        return;
+    }
+    
+    // Handler Input Data Rebranding
+    if (userStates[currentUserId] === 'AWAITING_RENAME_DATA') {
+        const inputStr = ctx.message.text.trim();
+        const parts = inputStr.split('|').map(s => s.trim());
+        
+        if (parts.length !== 3) {
+            return ctx.reply("⚠️ <b>Format Salah!</b>\nPastikan memisahkan 3 data dengan tanda | \nContoh: <code>987654321 | BINTANG | @bintang_bot</code>", { parse_mode: 'HTML' });
+        }
+        
+        const [newOwnerId, newBrand, newBotUsername] = parts;
+        let content = renameCache[currentUserId];
+        
+        content = content.replace(/const OWNER_ID = \d+;/g, `const OWNER_ID = ${newOwnerId};`);
+        content = content.replace(/peritopia/gi, newBrand); 
+        content = content.replace(/@PeritopiaConvert_bot/gi, newBotUsername);
+        
+        const fileBuffer = Buffer.from(content, 'utf8');
+        
+        const caption = `✅ <b>PROSES REBRANDING SELESAI</b>\n━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `👤 <b>Owner ID:</b> <code>${newOwnerId}</code>\n` +
+                        `🏷 <b>Branding:</b> <code>${newBrand}</code>\n` +
+                        `🤖 <b>Bot Admin:</b> <code>${newBotUsername}</code>\n\n` +
+                        `<i>File telah berhasil dimodifikasi dan siap diserahkan kepada klien.</i>`;
+                        
+        await ctx.replyWithDocument(
+            { source: fileBuffer, filename: 'index.js' },
+            { caption: caption, parse_mode: 'HTML' }
+        );
+        
+        delete userStates[currentUserId];
+        delete renameCache[currentUserId];
         return;
     }
     
@@ -421,24 +491,36 @@ async function processNextHit() {
             try {
                 context = await browser.newContext();
                 await context.route('**/*', (route) => {
-                    if (['image', 'media', 'font', 'stylesheet'].includes(route.request().resourceType())) route.abort();
+                    if (['image', 'media', 'font'].includes(route.request().resourceType())) route.abort();
                     else route.continue();
                 });
                 page = await context.newPage();
-                await page.goto('https://kxntu.com/login', { waitUntil: 'domcontentloaded', timeout: 45000 });
+                
+                await page.goto('https://kxntu.com/login', { waitUntil: 'networkidle', timeout: 45000 });
                 await page.fill('#l-username', account.username);
                 await page.fill('#l-password', account.password); 
                 await page.click('button[type="submit"].btn-primary');
-                await page.waitForLoadState('domcontentloaded', { timeout: 45000 });
-                await page.goto('https://kxntu.com/generar', { waitUntil: 'domcontentloaded', timeout: 45000 });
+                await page.waitForLoadState('networkidle', { timeout: 45000 });
+                await page.goto('https://kxntu.com/generar', { waitUntil: 'networkidle', timeout: 45000 });
 
                 let startHitTime = Date.now();
+                let lastLink = ''; 
 
                 while (true) {
                     if (targetTotal > 0 && allResults.length >= targetTotal) break;
+                    
                     await page.click('#btn-link');
+                    await page.waitForTimeout(2000); 
+
                     const link = await getLinkFromCodeboxGen(page);
                     if (!link) break; 
+                    
+                    if (link === lastLink) {
+                        await page.waitForTimeout(1000);
+                        continue;
+                    }
+                    lastLink = link;
+
                     if (await checkPartnerGen(page)) { await page.waitForTimeout(500); continue; }
                     const activeCookie = await resolveLinkToCookie(link);
                     if (!activeCookie) continue; 
@@ -514,22 +596,22 @@ async function processNextHit() {
                 `<b>Status Akhir       :</b> <code>Operasi Ekstraksi Berhasil</code>\n` +
                 `</blockquote>\n\n` +
                 `<b>Keterangan Tambahan:</b>\n` +
-                `<i>Sistem telah menyelesaikan tugas dengan sukses. Jika Anda membutuhkan standarisasi format atau verifikasi live/dead lanjutan, silakan teruskan file output di bawah ini ke bot manajemen @corvastcookie_bot agar diproses lebih lanjut.</i>`;
+                `<i>Sistem telah menyelesaikan tugas dengan sukses. Jika Anda membutuhkan standarisasi format atau verifikasi live/dead lanjutan, silakan teruskan file output di bawah ini ke bot manajemen @PeritopiaConvert_bot agar diproses lebih lanjut.</i>`;
             
             await ctx.reply(summaryLayout, { parse_mode: 'HTML' });
 
             const textContent = allResults.map(item => item.cookie).join('\n');
             const fileBuffer = Buffer.from(textContent, 'utf8');
             await ctx.replyWithDocument(
-                { source: fileBuffer, filename: 'LiveCookies.txt' }, 
+                { source: fileBuffer, filename: 'peritopia_Extracted_Live.txt' }, 
                 { caption: `📁 <b>Report Output: ${allResults.length} Data (Live)</b>\n\n📌 <i>Berkas ini berisi data sesi murni (raw cookies) yang dienkripsi oleh sistem.</i>`, parse_mode: 'HTML' }
             );
 
             if (allResults.length < targetTotal) {
-                await ctx.reply(`⚠️ <b>Perhatian:</b> Kapasitas database akun telah mencapai batas operasional (Limit). Hubungi developer untuk *update* sumber daya database.`, { parse_mode: 'HTML' });
+                await ctx.reply(`⚠️ <b>Informasi:</b> Target ${targetTotal} data tidak terpenuhi sepenuhnya. Sistem hanya berhasil mengekstrak ${allResults.length} data hidup (sisa akun di database mati/limit).`, { parse_mode: 'HTML' });
             }
         } else {
-            await ctx.reply(`⚠️ <b>Perhatian:</b> Kapasitas database akun telah mencapai batas operasional (Limit). Hubungi developer untuk *update* sumber daya database.`, { parse_mode: 'HTML' });
+            await ctx.reply(`⚠️ <b>Kegagalan Sistem:</b> Tidak berhasil menarik cookie sama sekali. Pastikan akun di dalam database valid atau struktur web generator belum berubah.`, { parse_mode: 'HTML' });
         }
     } catch (error) {
         await ctx.reply(`❌ <b>Kesalahan Fatal Sistem:</b>\n<code>${error.message}</code>`, { parse_mode: 'HTML' });
@@ -601,7 +683,7 @@ bot.command('bc', async (ctx) => {
 bot.catch((err) => console.error(`[Global Error] ⚠️`, err.message));
 
 async function startBotWithRetry() {
-    try { await bot.launch({ polling: { timeout: 30 } }); console.log('✅ Sistem Corvast Online & Beroperasi (Mode Terenkripsi)'); } 
+    try { await bot.launch({ polling: { timeout: 30 } }); console.log('✅ Sistem peritopia Online & Beroperasi (Mode Terenkripsi)'); } 
     catch (err) { setTimeout(startBotWithRetry, 5000); }
 }
 startBotWithRetry();
