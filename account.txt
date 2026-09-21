@@ -1,5 +1,3 @@
-bagus01:masuk123
-bagus02:masuk123
-bagus03:masuk123
-bagus04:masuk123
-bagus05:masuk123
+kon01:masuk123
+kon02:masuk123
+kon03:masuk123
